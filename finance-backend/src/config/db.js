@@ -1,20 +1,42 @@
-const { PrismaClient } = require("@prisma/client");
 const { PrismaPg } = require("@prisma/adapter-pg");
 
-const globalForPrisma = global;
-const adapter = new PrismaPg({
-  connectionString: process.env.DATABASE_URL,
-});
+const globalForPrisma = globalThis;
 
-const prisma =
-  globalForPrisma.prisma ||
-  new PrismaClient({
-    adapter,
-    log: ["warn", "error"],
+let prisma;
+let initializationError;
+
+try {
+  const { PrismaClient } = require("@prisma/client");
+
+  if (!process.env.DATABASE_URL) {
+    throw new Error("DATABASE_URL is not set.");
+  }
+
+  const adapter = new PrismaPg({
+    connectionString: process.env.DATABASE_URL,
   });
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
+  prisma =
+    globalForPrisma.prisma ||
+    new PrismaClient({
+      adapter,
+      log: ["warn", "error"],
+    });
+
+  if (process.env.NODE_ENV !== "production") {
+    globalForPrisma.prisma = prisma;
+  }
+} catch (error) {
+  initializationError = error;
+  console.error("Prisma initialization failed:", error);
+  prisma = new Proxy(
+    {},
+    {
+      get() {
+        throw initializationError;
+      },
+    }
+  );
 }
 
 module.exports = prisma;
