@@ -22,7 +22,7 @@ app.get("/api/health", (req, res) => {
     message: "Finance backend is running.",
   });
 });
-app.get("/" , (req, res) => {
+app.get("/", (req, res) => {
   res.send("Welcome to the Finance Backend API!");
 });
 
