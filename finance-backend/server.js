@@ -11,6 +11,18 @@ const { apiLimiter } = require("./src/middleware/rateLimiter");
 const app = express();
 const port = process.env.PORT || 5000;
 const isVercel = process.env.VERCEL === "1";
+const requiredEnvVars = ["DATABASE_URL", "JWT_SECRET"];
+const missingEnvVars = requiredEnvVars.filter((name) => !process.env[name]);
+
+if (missingEnvVars.length > 0) {
+  console.error(
+    `Missing required environment variables: ${missingEnvVars.join(", ")}`
+  );
+}
+
+if (isVercel) {
+  app.set("trust proxy", 1);
+}
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
