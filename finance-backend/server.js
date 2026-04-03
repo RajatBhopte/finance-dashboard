@@ -10,6 +10,7 @@ const { apiLimiter } = require("./src/middleware/rateLimiter");
 
 const app = express();
 const port = process.env.PORT || 5000;
+const isVercel = process.env.VERCEL === "1";
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -39,6 +40,10 @@ app.use((req, res) => {
 
 app.use(errorHandler);
 
-app.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
-});
+if (!isVercel) {
+  app.listen(port, () => {
+    console.log(`Server running on http://localhost:${port}`);
+  });
+}
+
+module.exports = app;
