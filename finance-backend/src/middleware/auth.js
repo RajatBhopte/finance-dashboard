@@ -1,6 +1,13 @@
 const jwt = require("jsonwebtoken");
 const prisma = require("../config/db");
 
+// It checks the Authorization header.
+// It expects Bearer <token>.
+// It verifies the JWT using JWT_SECRET.
+// It fetches the user from the database.
+// If the user exists and is active, it attaches that user to req.user.
+// Then it calls next() so the request can continue.
+
 async function protect(req, res, next) {
   const authHeader = req.headers.authorization;
 

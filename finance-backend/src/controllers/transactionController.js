@@ -54,6 +54,15 @@ function parseFilterDate(value, endOfDay = false) {
   return parsed;
 }
 
+function parsePositiveInteger(value, fallback) {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
 function buildTransactionSelect() {
   return {
     id: true,
@@ -140,7 +149,7 @@ const createTransaction = async (req, res, next) => {
 
 const getTransactions = async (req, res, next) => {
   try {
-    const { type, category, startDate, endDate } = req.query;
+    const { type, category, startDate, endDate, search, page, limit } = req.query;
 
     const where = {
       isDeleted: false,
@@ -148,8 +157,11 @@ const getTransactions = async (req, res, next) => {
 
     const normalizedType = normalizeText(type).toUpperCase();
     const normalizedCategory = normalizeText(category);
+    const normalizedSearch = normalizeText(search);
     const parsedStartDate = startDate ? parseFilterDate(startDate) : null;
     const parsedEndDate = endDate ? parseFilterDate(endDate, true) : null;
+    const parsedPage = parsePositiveInteger(page, 1);
+    const parsedLimit = parsePositiveInteger(limit, 10);
 
     if (type && !TRANSACTION_TYPES.includes(normalizedType)) {
       return res.status(400).json({
@@ -179,6 +191,20 @@ const getTransactions = async (req, res, next) => {
       });
     }
 
+    if (parsedPage === null) {
+      return res.status(400).json({
+        success: false,
+        message: "page must be a positive integer.",
+      });
+    }
+
+    if (parsedLimit === null) {
+      return res.status(400).json({
+        success: false,
+        message: "limit must be a positive integer.",
+      });
+    }
+
     if (normalizedType) {
       where.type = normalizedType;
     }
@@ -202,17 +228,68 @@ const getTransactions = async (req, res, next) => {
       }
     }
 
-    const transactions = await prisma.transaction.findMany({
-      where,
-      orderBy: {
-        date: "desc",
-      },
-      select: buildTransactionSelect(),
-    });
+    if (normalizedSearch) {
+      where.OR = [
+        {
+          category: {
+            contains: normalizedSearch,
+            mode: "insensitive",
+          },
+        },
+        {
+          notes: {
+            contains: normalizedSearch,
+            mode: "insensitive",
+          },
+        },
+        {
+          user: {
+            name: {
+              contains: normalizedSearch,
+              mode: "insensitive",
+            },
+          },
+        },
+        {
+          user: {
+            email: {
+              contains: normalizedSearch,
+              mode: "insensitive",
+            },
+          },
+        },
+      ];
+    }
+
+    const skip = (parsedPage - 1) * parsedLimit;
+
+    const [transactions, total] = await Promise.all([
+      prisma.transaction.findMany({
+        where,
+        orderBy: [
+          {
+            date: "desc",
+          },
+          {
+            createdAt: "desc",
+          },
+        ],
+        skip,
+        take: parsedLimit,
+        select: buildTransactionSelect(),
+      }),
+      prisma.transaction.count({ where }),
+    ]);
 
     return res.status(200).json({
       success: true,
       count: transactions.length,
+      pagination: {
+        page: parsedPage,
+        limit: parsedLimit,
+        total,
+        totalPages: Math.ceil(total / parsedLimit) || 1,
+      },
       data: transactions,
     });
   } catch (error) {
