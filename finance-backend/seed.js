@@ -44,13 +44,18 @@ async function main() {
     },
   });
 
+  const now = new Date();
+  const currentMonthDate = new Date(now.getFullYear(), now.getMonth(), 15);
+  const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 15);
+  const twoMonthsAgoDate = new Date(now.getFullYear(), now.getMonth() - 2, 15);
+
   await prisma.transaction.createMany({
     data: [
       {
         amount: 50000,
         type: TransactionType.INCOME,
         category: "Salary",
-        date: new Date("2026-01-15"),
+        date: prevMonthDate,
         notes: "Monthly salary",
         createdBy: admin.id,
       },
@@ -58,7 +63,7 @@ async function main() {
         amount: 12000,
         type: TransactionType.EXPENSE,
         category: "Rent",
-        date: new Date("2026-01-20"),
+        date: prevMonthDate,
         notes: "Apartment rent",
         createdBy: admin.id,
       },
@@ -66,7 +71,7 @@ async function main() {
         amount: 9000,
         type: TransactionType.INCOME,
         category: "Freelance",
-        date: new Date("2026-02-02"),
+        date: currentMonthDate,
         notes: "Consulting work",
         createdBy: analyst.id,
       },
@@ -74,7 +79,7 @@ async function main() {
         amount: 3000,
         type: TransactionType.EXPENSE,
         category: "Groceries",
-        date: new Date("2026-02-11"),
+        date: currentMonthDate,
         notes: "Household groceries",
         createdBy: viewer.id,
       },
@@ -82,7 +87,7 @@ async function main() {
         amount: 4500,
         type: TransactionType.EXPENSE,
         category: "Transport",
-        date: new Date("2026-03-03"),
+        date: twoMonthsAgoDate,
         notes: "Fuel and travel",
         createdBy: analyst.id,
       },

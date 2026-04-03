@@ -16,34 +16,71 @@ function buildBaseWhere() {
 }
 
 async function buildSummary() {
-  const [income, expense] = await Promise.all([
+  const now = new Date();
+  const startOfCurrentMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const startOfPreviousMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  const endOfPreviousMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0, 23, 59, 59, 999));
+
+  const [
+    income, 
+    expense, 
+    currentIncome, 
+    currentExpense, 
+    previousIncome, 
+    previousExpense
+  ] = await Promise.all([
     prisma.transaction.aggregate({
-      where: {
-        ...buildBaseWhere(),
-        type: "INCOME",
-      },
-      _sum: {
-        amount: true,
-      },
+      where: { ...buildBaseWhere(), type: "INCOME" },
+      _sum: { amount: true },
     }),
     prisma.transaction.aggregate({
-      where: {
-        ...buildBaseWhere(),
-        type: "EXPENSE",
-      },
-      _sum: {
-        amount: true,
-      },
+      where: { ...buildBaseWhere(), type: "EXPENSE" },
+      _sum: { amount: true },
+    }),
+    prisma.transaction.aggregate({
+      where: { ...buildBaseWhere(), type: "INCOME", date: { gte: startOfCurrentMonth } },
+      _sum: { amount: true },
+    }),
+    prisma.transaction.aggregate({
+      where: { ...buildBaseWhere(), type: "EXPENSE", date: { gte: startOfCurrentMonth } },
+      _sum: { amount: true },
+    }),
+    prisma.transaction.aggregate({
+      where: { ...buildBaseWhere(), type: "INCOME", date: { gte: startOfPreviousMonth, lte: endOfPreviousMonth } },
+      _sum: { amount: true },
+    }),
+    prisma.transaction.aggregate({
+      where: { ...buildBaseWhere(), type: "EXPENSE", date: { gte: startOfPreviousMonth, lte: endOfPreviousMonth } },
+      _sum: { amount: true },
     }),
   ]);
 
   const totalIncome = toNumber(income._sum.amount);
   const totalExpense = toNumber(expense._sum.amount);
+  const netBalance = Number((totalIncome - totalExpense).toFixed(2));
+
+  const curInc = toNumber(currentIncome._sum.amount);
+  const prevInc = toNumber(previousIncome._sum.amount);
+  const curExp = toNumber(currentExpense._sum.amount);
+  const prevExp = toNumber(previousExpense._sum.amount);
+  
+  const curNet = curInc - curExp;
+  const prevNet = prevInc - prevExp;
+
+  const calculateTrend = (current, previous) => {
+    if (previous === 0) return current > 0 ? 100 : 0;
+    return Number((((current - previous) / Math.abs(previous)) * 100).toFixed(1));
+  };
 
   return {
     totalIncome,
     totalExpense,
-    netBalance: Number((totalIncome - totalExpense).toFixed(2)),
+    netBalance,
+    trends: {
+      income: calculateTrend(curInc, prevInc),
+      expense: calculateTrend(curExp, prevExp),
+      netBalance: calculateTrend(curNet, prevNet)
+    }
   };
 }
 

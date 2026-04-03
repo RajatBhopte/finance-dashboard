@@ -1,0 +1,113 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --color-canvas: 245 247 251;
+  --color-surface: 255 255 255;
+  --color-panel: 250 251 255;
+  --color-text: 17 24 39;
+  --color-muted: 100 116 139;
+  --color-line: 226 232 240;
+  --color-sidebar: 248 250 252;
+  --color-accent: 37 99 235;
+  --color-accent-soft: 219 234 254;
+  --color-positive: 22 163 74;
+  --color-positive-soft: 220 252 231;
+  --color-negative: 220 38 38;
+  --color-negative-soft: 254 226 226;
+  --color-admin: 124 58 237;
+  --color-analyst: 37 99 235;
+  --color-viewer: 100 116 139;
+  --color-on-accent: 255 255 255;
+}
+
+.dark {
+  color-scheme: dark;
+  --color-canvas: 9 14 26;
+  --color-surface: 15 23 42;
+  --color-panel: 18 28 48;
+  --color-text: 241 245 249;
+  --color-muted: 148 163 184;
+  --color-line: 51 65 85;
+  --color-sidebar: 10 18 32;
+  --color-accent: 96 165 250;
+  --color-accent-soft: 30 41 59;
+  --color-positive: 74 222 128;
+  --color-positive-soft: 20 83 45;
+  --color-negative: 251 113 133;
+  --color-negative-soft: 127 29 29;
+  --color-admin: 167 139 250;
+  --color-analyst: 96 165 250;
+  --color-viewer: 148 163 184;
+  --color-on-accent: 15 23 42;
+}
+
+@layer base {
+  * {
+    @apply border-line;
+  }
+
+  html {
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply min-h-screen bg-canvas text-text antialiased;
+    background-image:
+      radial-gradient(circle at top left, rgba(37, 99, 235, 0.16), transparent 30%),
+      radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 24%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(245, 247, 251, 0.96));
+  }
+
+  .dark body {
+    background-image:
+      radial-gradient(circle at top left, rgba(37, 99, 235, 0.16), transparent 24%),
+      radial-gradient(circle at top right, rgba(14, 165, 233, 0.10), transparent 18%),
+      linear-gradient(180deg, rgba(7, 12, 22, 0.95), rgba(9, 14, 26, 1));
+  }
+
+  button:disabled {
+    @apply cursor-not-allowed opacity-60;
+  }
+}
+
+@layer components {
+  .surface-card {
+    @apply rounded-[28px] border border-line/80 bg-surface/95 shadow-card backdrop-blur-xl;
+  }
+
+  .soft-panel {
+    @apply rounded-3xl border border-line/80 bg-panel/85 backdrop-blur-xl;
+  }
+
+  .nav-pill {
+    @apply flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold text-muted transition hover:bg-accentSoft hover:text-text;
+  }
+
+  .nav-pill.active {
+    @apply bg-accentSoft text-text shadow-sm;
+  }
+
+  .field-input {
+    @apply h-12 w-full rounded-2xl border border-line bg-surface px-4 text-sm text-text outline-none transition placeholder:text-muted focus:border-accent focus:ring-4 focus:ring-accent/10;
+  }
+
+  .field-textarea {
+    @apply w-full rounded-2xl border border-line bg-surface px-4 py-3 text-sm text-text outline-none transition placeholder:text-muted focus:border-accent focus:ring-4 focus:ring-accent/10;
+  }
+
+  .primary-button {
+    @apply inline-flex items-center justify-center rounded-2xl bg-accent px-5 py-3 text-sm font-semibold transition hover:opacity-90;
+    color: rgb(var(--color-on-accent));
+  }
+
+  .secondary-button {
+    @apply inline-flex items-center justify-center rounded-2xl border border-line bg-surface px-5 py-3 text-sm font-semibold text-text transition hover:border-accent/30 hover:bg-accentSoft/50;
+  }
+
+  .table-shell {
+    @apply overflow-hidden rounded-[28px] border border-line/80 bg-surface/95 shadow-card;
+  }
+}
