@@ -1,46 +1,64 @@
 require("dotenv").config();
 
 const bcrypt = require("bcryptjs");
-const { PrismaClient, Role, TransactionType } = require("@prisma/client");
-const { PrismaPg } = require("@prisma/adapter-pg");
+const mongoose = require("mongoose");
+const connectDB = require("./src/config/db");
+const User = require("./src/models/User");
+const Transaction = require("./src/models/Transaction");
 
-const adapter = new PrismaPg({
-  connectionString: process.env.DATABASE_URL,
-});
-
-const prisma = new PrismaClient({ adapter });
+const dns = require("dns");
+dns.setServers(["8.8.8.8", "1.1.1.1"]);
 
 async function upsertUser(name, email, password, role) {
+  const normalizedEmail = String(email).trim().toLowerCase();
   const hashedPassword = await bcrypt.hash(password, 10);
 
-  return prisma.user.upsert({
-    where: { email },
-    update: {
-      name,
-      password: hashedPassword,
-      role,
-      isActive: true,
-    },
-    create: {
-      name,
-      email,
-      password: hashedPassword,
-      role,
-      isActive: true,
-    },
+  const existingUser = await User.findOne({ email: normalizedEmail });
+
+  if (existingUser) {
+    existingUser.name = name;
+    existingUser.password = hashedPassword;
+    existingUser.role = role;
+    existingUser.isActive = true;
+    existingUser.updatedBy = existingUser._id;
+    await existingUser.save();
+    return existingUser;
+  }
+
+  return User.create({
+    name,
+    email: normalizedEmail,
+    password: hashedPassword,
+    role,
+    isActive: true,
   });
 }
 
 async function main() {
-  const admin = await upsertUser("Admin User", "admin@finance.com", "admin123", Role.ADMIN);
-  const analyst = await upsertUser("Analyst User", "analyst@finance.com", "analyst123", Role.ANALYST);
-  const viewer = await upsertUser("Viewer User", "viewer@finance.com", "viewer123", Role.VIEWER);
+  await connectDB();
 
-  await prisma.transaction.deleteMany({
-    where: {
-      createdBy: {
-        in: [admin.id, analyst.id, viewer.id],
-      },
+  const admin = await upsertUser(
+    "Admin User",
+    "admin@finance.com",
+    "admin123",
+    "ADMIN",
+  );
+  const analyst = await upsertUser(
+    "Analyst User",
+    "analyst@finance.com",
+    "analyst123",
+    "ANALYST",
+  );
+  const viewer = await upsertUser(
+    "Viewer User",
+    "viewer@finance.com",
+    "viewer123",
+    "VIEWER",
+  );
+
+  await Transaction.deleteMany({
+    createdBy: {
+      $in: [admin._id, analyst._id, viewer._id],
     },
   });
 
@@ -49,50 +67,53 @@ async function main() {
   const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 15);
   const twoMonthsAgoDate = new Date(now.getFullYear(), now.getMonth() - 2, 15);
 
-  await prisma.transaction.createMany({
-    data: [
-      {
-        amount: 50000,
-        type: TransactionType.INCOME,
-        category: "Salary",
-        date: prevMonthDate,
-        notes: "Monthly salary",
-        createdBy: admin.id,
-      },
-      {
-        amount: 12000,
-        type: TransactionType.EXPENSE,
-        category: "Rent",
-        date: prevMonthDate,
-        notes: "Apartment rent",
-        createdBy: admin.id,
-      },
-      {
-        amount: 9000,
-        type: TransactionType.INCOME,
-        category: "Freelance",
-        date: currentMonthDate,
-        notes: "Consulting work",
-        createdBy: analyst.id,
-      },
-      {
-        amount: 3000,
-        type: TransactionType.EXPENSE,
-        category: "Groceries",
-        date: currentMonthDate,
-        notes: "Household groceries",
-        createdBy: viewer.id,
-      },
-      {
-        amount: 4500,
-        type: TransactionType.EXPENSE,
-        category: "Transport",
-        date: twoMonthsAgoDate,
-        notes: "Fuel and travel",
-        createdBy: analyst.id,
-      },
-    ],
-  });
+  await Transaction.insertMany([
+    {
+      amount: 50000,
+      type: "INCOME",
+      category: "Salary",
+      date: prevMonthDate,
+      notes: "Monthly salary",
+      createdBy: admin._id,
+      updatedBy: admin._id,
+    },
+    {
+      amount: 12000,
+      type: "EXPENSE",
+      category: "Rent",
+      date: prevMonthDate,
+      notes: "Apartment rent",
+      createdBy: admin._id,
+      updatedBy: admin._id,
+    },
+    {
+      amount: 9000,
+      type: "INCOME",
+      category: "Freelance",
+      date: currentMonthDate,
+      notes: "Consulting work",
+      createdBy: analyst._id,
+      updatedBy: analyst._id,
+    },
+    {
+      amount: 3000,
+      type: "EXPENSE",
+      category: "Groceries",
+      date: currentMonthDate,
+      notes: "Household groceries",
+      createdBy: viewer._id,
+      updatedBy: viewer._id,
+    },
+    {
+      amount: 4500,
+      type: "EXPENSE",
+      category: "Transport",
+      date: twoMonthsAgoDate,
+      notes: "Fuel and travel",
+      createdBy: analyst._id,
+      updatedBy: analyst._id,
+    },
+  ]);
 
   console.log("Seed data created successfully.");
 }
@@ -103,5 +124,5 @@ main()
     process.exitCode = 1;
   })
   .finally(async () => {
-    await prisma.$disconnect();
+    await mongoose.connection.close();
   });

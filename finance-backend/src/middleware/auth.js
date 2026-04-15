@@ -1,5 +1,5 @@
 const jwt = require("jsonwebtoken");
-const prisma = require("../config/db");
+const User = require("../models/User");
 
 // It checks the Authorization header.
 // It expects Bearer <token>.
@@ -22,16 +22,9 @@ async function protect(req, res, next) {
     const token = authHeader.split(" ")[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        isActive: true,
-      },
-    });
+    const user = await User.findById(decoded.id)
+      .select("name email role isActive")
+      .lean();
 
     if (!user || !user.isActive) {
       return res.status(401).json({
@@ -40,7 +33,13 @@ async function protect(req, res, next) {
       });
     }
 
-    req.user = user;
+    req.user = {
+      id: user._id.toString(),
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      isActive: user.isActive,
+    };
     return next();
   } catch (error) {
     return res.status(401).json({

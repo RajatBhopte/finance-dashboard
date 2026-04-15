@@ -3,10 +3,24 @@ function errorHandler(err, req, res, next) {
     return next(err);
   }
 
-  if (err && err.code === "P2002") {
+  if (err && err.code === 11000) {
     return res.status(400).json({
       success: false,
       message: "A unique field already exists.",
+    });
+  }
+
+  if (err && err.name === "CastError") {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid identifier format.",
+    });
+  }
+
+  if (err && err.name === "ValidationError") {
+    return res.status(400).json({
+      success: false,
+      message: err.message,
     });
   }
 

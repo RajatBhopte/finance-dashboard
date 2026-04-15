@@ -1,4 +1,6 @@
-const prisma = require("../config/db");
+const mongoose = require("mongoose");
+const Transaction = require("../models/Transaction");
+const User = require("../models/User");
 
 const TRANSACTION_TYPES = ["INCOME", "EXPENSE"];
 
@@ -12,6 +14,10 @@ function normalizeText(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function parseAmount(value) {
   if (value === undefined || value === null || value === "") {
     return null;
@@ -23,7 +29,7 @@ function parseAmount(value) {
     return null;
   }
 
-  return parsed.toFixed(2);
+  return Number(parsed.toFixed(2));
 }
 
 function parseTransactionDate(value) {
@@ -63,43 +69,56 @@ function parsePositiveInteger(value, fallback) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
-function buildTransactionSelect() {
+function isValidObjectId(value) {
+  return mongoose.Types.ObjectId.isValid(value);
+}
+
+function formatPopulatedUser(user) {
+  if (!user || typeof user !== "object") {
+    return null;
+  }
+
   return {
-    id: true,
-    amount: true,
-    type: true,
-    category: true,
-    date: true,
-    notes: true,
-    isDeleted: true,
-    createdBy: true,
-    createdAt: true,
-    user: {
-      select: {
-        id: true,
-        name: true,
-        email: true,
-      },
-    },
+    id: user._id?.toString?.() || user.id || null,
+    name: user.name || null,
+    email: user.email || null,
+  };
+}
+
+function formatTransaction(transaction) {
+  const source =
+    typeof transaction.toJSON === "function"
+      ? transaction.toJSON()
+      : transaction;
+  const populatedUser = formatPopulatedUser(source.createdBy);
+  const createdBy = populatedUser
+    ? populatedUser.id
+    : source.createdBy?.toString?.() || source.createdBy;
+
+  return {
+    id: source.id || source._id?.toString?.(),
+    amount: Number(Number(source.amount).toFixed(2)),
+    type: source.type,
+    category: source.category,
+    date: source.date,
+    notes: source.notes,
+    isDeleted: Boolean(source.isDeleted),
+    createdBy,
+    createdAt: source.createdAt,
+    user: populatedUser,
   };
 }
 
 async function findActiveTransaction(id) {
-  return prisma.transaction.findFirst({
-    where: {
-      id,
-      isDeleted: false,
-    },
-    select: buildTransactionSelect(),
-  });
+  if (!isValidObjectId(id)) {
+    return null;
+  }
+
+  return Transaction.findOne({
+    _id: id,
+    isDeleted: false,
+  }).populate("createdBy", "name email");
 }
-
-
-// reads amount, type, category, date, notes from req.body
-// validates them
-// uses req.user.id from your auth middleware as createdBy
-// creates the row with prisma.transaction.create()
-// returns 201
 
 const createTransaction = async (req, res, next) => {
   try {
@@ -111,7 +130,12 @@ const createTransaction = async (req, res, next) => {
     const parsedDate = parseTransactionDate(date);
     const normalizedNotes = normalizeText(notes);
 
-    if (!parsedAmount || !normalizedType || !normalizedCategory || !parsedDate) {
+    if (
+      !parsedAmount ||
+      !normalizedType ||
+      !normalizedCategory ||
+      !parsedDate
+    ) {
       return res.status(400).json({
         success: false,
         message: "Please provide amount, type, category and a valid date.",
@@ -125,31 +149,33 @@ const createTransaction = async (req, res, next) => {
       });
     }
 
-    const transaction = await prisma.transaction.create({
-      data: {
-        amount: parsedAmount,
-        type: normalizedType,
-        category: normalizedCategory,
-        date: parsedDate,
-        notes: normalizedNotes || null,
-        createdBy: req.user.id,
-      },
-      select: buildTransactionSelect(),
+    const createdTransaction = await Transaction.create({
+      amount: parsedAmount,
+      type: normalizedType,
+      category: normalizedCategory,
+      date: parsedDate,
+      notes: normalizedNotes || null,
+      createdBy: req.user.id,
+      updatedBy: req.user.id,
     });
+
+    const transaction = await Transaction.findById(
+      createdTransaction._id,
+    ).populate("createdBy", "name email");
 
     return res.status(201).json({
       success: true,
-      data: transaction,
+      data: formatTransaction(transaction),
     });
   } catch (error) {
     return next(error);
   }
 };
 
-
 const getTransactions = async (req, res, next) => {
   try {
-    const { type, category, startDate, endDate, search, page, limit } = req.query;
+    const { type, category, startDate, endDate, search, page, limit } =
+      req.query;
 
     const where = {
       isDeleted: false,
@@ -210,87 +236,61 @@ const getTransactions = async (req, res, next) => {
     }
 
     if (normalizedCategory) {
-      where.category = {
-        equals: normalizedCategory,
-        mode: "insensitive",
-      };
+      where.category = new RegExp(`^${escapeRegex(normalizedCategory)}$`, "i");
     }
 
     if (parsedStartDate || parsedEndDate) {
       where.date = {};
 
       if (parsedStartDate) {
-        where.date.gte = parsedStartDate;
+        where.date.$gte = parsedStartDate;
       }
 
       if (parsedEndDate) {
-        where.date.lte = parsedEndDate;
+        where.date.$lte = parsedEndDate;
       }
     }
 
     if (normalizedSearch) {
-      where.OR = [
-        {
-          category: {
-            contains: normalizedSearch,
-            mode: "insensitive",
-          },
-        },
-        {
-          notes: {
-            contains: normalizedSearch,
-            mode: "insensitive",
-          },
-        },
-        {
-          user: {
-            name: {
-              contains: normalizedSearch,
-              mode: "insensitive",
-            },
-          },
-        },
-        {
-          user: {
-            email: {
-              contains: normalizedSearch,
-              mode: "insensitive",
-            },
-          },
-        },
-      ];
+      const searchRegex = new RegExp(escapeRegex(normalizedSearch), "i");
+      const matchingUsers = await User.find({
+        $or: [{ name: searchRegex }, { email: searchRegex }],
+      })
+        .select("_id")
+        .lean();
+
+      const matchingUserIds = matchingUsers.map((item) => item._id);
+
+      where.$or = [{ category: searchRegex }, { notes: searchRegex }];
+
+      if (matchingUserIds.length) {
+        where.$or.push({ createdBy: { $in: matchingUserIds } });
+      }
     }
 
     const skip = (parsedPage - 1) * parsedLimit;
 
     const [transactions, total] = await Promise.all([
-      prisma.transaction.findMany({
-        where,
-        orderBy: [
-          {
-            date: "desc",
-          },
-          {
-            createdAt: "desc",
-          },
-        ],
-        skip,
-        take: parsedLimit,
-        select: buildTransactionSelect(),
-      }),
-      prisma.transaction.count({ where }),
+      Transaction.find(where)
+        .sort({ date: -1, createdAt: -1 })
+        .skip(skip)
+        .limit(parsedLimit)
+        .populate("createdBy", "name email"),
+      Transaction.countDocuments(where),
     ]);
+
+    const formattedTransactions = transactions.map(formatTransaction);
 
     return res.status(200).json({
       success: true,
-      count: transactions.length,
+      count: formattedTransactions.length,
       pagination: {
         page: parsedPage,
         limit: parsedLimit,
         total,
         totalPages: Math.ceil(total / parsedLimit) || 1,
       },
-      data: transactions,
+      data: formattedTransactions,
     });
   } catch (error) {
     return next(error);
@@ -307,7 +307,7 @@ const getTransactionById = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      data: transaction,
+      data: formatTransaction(transaction),
     });
   } catch (error) {
     return next(error);
@@ -389,17 +389,21 @@ const updateTransaction = async (req, res, next) => {
       });
     }
 
-    const updatedTransaction = await prisma.transaction.update({
-      where: {
-        id: req.params.id,
-      },
-      data,
-      select: buildTransactionSelect(),
-    });
+    data.updatedBy = req.user.id;
+
+    await Transaction.findByIdAndUpdate(req.params.id, data);
+
+    const updatedTransaction = await Transaction.findById(
+      req.params.id,
+    ).populate("createdBy", "name email");
+
+    if (!updatedTransaction || updatedTransaction.isDeleted) {
+      throw createError(404, "Transaction not found.");
+    }
 
     return res.status(200).json({
       success: true,
-      data: updatedTransaction,
+      data: formatTransaction(updatedTransaction),
     });
   } catch (error) {
     return next(error);
@@ -414,13 +418,9 @@ const deleteTransaction = async (req, res, next) => {
       throw createError(404, "Transaction not found.");
     }
 
-    await prisma.transaction.update({
-      where: {
-        id: req.params.id,
-      },
-      data: {
-        isDeleted: true,
-      },
+    await Transaction.findByIdAndUpdate(req.params.id, {
+      isDeleted: true,
+      updatedBy: req.user.id,
     });
 
     return res.status(200).json({

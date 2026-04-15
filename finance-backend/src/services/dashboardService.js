@@ -1,4 +1,4 @@
-const prisma = require("../config/db");
+const Transaction = require("../models/Transaction");
 
 function toNumber(value) {
   if (value === null || value === undefined) {
@@ -15,61 +15,70 @@ function buildBaseWhere() {
   };
 }
 
-async function buildSummary() {
-  const now = new Date();
-  const startOfCurrentMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const startOfPreviousMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
-  const endOfPreviousMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0, 23, 59, 59, 999));
-
-  const [
-    income, 
-    expense, 
-    currentIncome, 
-    currentExpense, 
-    previousIncome, 
-    previousExpense
-  ] = await Promise.all([
-    prisma.transaction.aggregate({
-      where: { ...buildBaseWhere(), type: "INCOME" },
-      _sum: { amount: true },
-    }),
-    prisma.transaction.aggregate({
-      where: { ...buildBaseWhere(), type: "EXPENSE" },
-      _sum: { amount: true },
-    }),
-    prisma.transaction.aggregate({
-      where: { ...buildBaseWhere(), type: "INCOME", date: { gte: startOfCurrentMonth } },
-      _sum: { amount: true },
-    }),
-    prisma.transaction.aggregate({
-      where: { ...buildBaseWhere(), type: "EXPENSE", date: { gte: startOfCurrentMonth } },
-      _sum: { amount: true },
-    }),
-    prisma.transaction.aggregate({
-      where: { ...buildBaseWhere(), type: "INCOME", date: { gte: startOfPreviousMonth, lte: endOfPreviousMonth } },
-      _sum: { amount: true },
-    }),
-    prisma.transaction.aggregate({
-      where: { ...buildBaseWhere(), type: "EXPENSE", date: { gte: startOfPreviousMonth, lte: endOfPreviousMonth } },
-      _sum: { amount: true },
-    }),
+async function sumAmount(where) {
+  const rows = await Transaction.aggregate([
+    {
+      $match: where,
+    },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: "$amount" },
+      },
+    },
   ]);
 
-  const totalIncome = toNumber(income._sum.amount);
-  const totalExpense = toNumber(expense._sum.amount);
+  return toNumber(rows[0]?.total);
+}
+
+async function buildSummary() {
+  const now = new Date();
+  const startOfCurrentMonth = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+  );
+  const startOfPreviousMonth = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1),
+  );
+  const endOfPreviousMonth = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0, 23, 59, 59, 999),
+  );
+
+  const [totalIncome, totalExpense, curInc, curExp, prevInc, prevExp] =
+    await Promise.all([
+      sumAmount({ ...buildBaseWhere(), type: "INCOME" }),
+      sumAmount({ ...buildBaseWhere(), type: "EXPENSE" }),
+      sumAmount({
+        ...buildBaseWhere(),
+        type: "INCOME",
+        date: { $gte: startOfCurrentMonth },
+      }),
+      sumAmount({
+        ...buildBaseWhere(),
+        type: "EXPENSE",
+        date: { $gte: startOfCurrentMonth },
+      }),
+      sumAmount({
+        ...buildBaseWhere(),
+        type: "INCOME",
+        date: { $gte: startOfPreviousMonth, $lte: endOfPreviousMonth },
+      }),
+      sumAmount({
+        ...buildBaseWhere(),
+        type: "EXPENSE",
+        date: { $gte: startOfPreviousMonth, $lte: endOfPreviousMonth },
+      }),
+    ]);
+
   const netBalance = Number((totalIncome - totalExpense).toFixed(2));
 
-  const curInc = toNumber(currentIncome._sum.amount);
-  const prevInc = toNumber(previousIncome._sum.amount);
-  const curExp = toNumber(currentExpense._sum.amount);
-  const prevExp = toNumber(previousExpense._sum.amount);
-  
   const curNet = curInc - curExp;
   const prevNet = prevInc - prevExp;
 
   const calculateTrend = (current, previous) => {
     if (previous === 0) return current > 0 ? 100 : 0;
-    return Number((((current - previous) / Math.abs(previous)) * 100).toFixed(1));
+    return Number(
+      (((current - previous) / Math.abs(previous)) * 100).toFixed(1),
+    );
   };
 
   return {
@@ -79,39 +88,50 @@ async function buildSummary() {
     trends: {
       income: calculateTrend(curInc, prevInc),
       expense: calculateTrend(curExp, prevExp),
-      netBalance: calculateTrend(curNet, prevNet)
-    }
+      netBalance: calculateTrend(curNet, prevNet),
+    },
   };
 }
 
 async function buildCategoryTotals() {
-  const grouped = await prisma.transaction.groupBy({
-    by: ["category", "type"],
-    where: buildBaseWhere(),
-    _sum: {
-      amount: true,
+  const grouped = await Transaction.aggregate([
+    {
+      $match: buildBaseWhere(),
     },
-    orderBy: {
-      category: "asc",
+    {
+      $group: {
+        _id: {
+          category: "$category",
+          type: "$type",
+        },
+        amount: {
+          $sum: "$amount",
+        },
+      },
     },
-  });
+    {
+      $sort: {
+        "_id.category": 1,
+      },
+    },
+  ]);
 
   const categoryMap = new Map();
 
   for (const row of grouped) {
-    if (!categoryMap.has(row.category)) {
-      categoryMap.set(row.category, {
-        category: row.category,
+    if (!categoryMap.has(row._id.category)) {
+      categoryMap.set(row._id.category, {
+        category: row._id.category,
         income: 0,
         expense: 0,
         net: 0,
       });
     }
 
-    const current = categoryMap.get(row.category);
-    const amount = toNumber(row._sum.amount);
+    const current = categoryMap.get(row._id.category);
+    const amount = toNumber(row.amount);
 
-    if (row.type === "INCOME") {
+    if (row._id.type === "INCOME") {
       current.income = amount;
     } else {
       current.expense = amount;
@@ -124,19 +144,38 @@ async function buildCategoryTotals() {
 }
 
 async function buildMonthlyTrends() {
-  const rows = await prisma.$queryRaw`
-    SELECT
-      TO_CHAR(DATE_TRUNC('month', "date"), 'YYYY-MM') AS month,
-      COALESCE(SUM(CASE WHEN "type" = 'INCOME' THEN "amount" ELSE 0 END), 0) AS income,
-      COALESCE(SUM(CASE WHEN "type" = 'EXPENSE' THEN "amount" ELSE 0 END), 0) AS expense
-    FROM "Transaction"
-    WHERE "isDeleted" = false
-    GROUP BY DATE_TRUNC('month', "date")
-    ORDER BY DATE_TRUNC('month', "date") ASC
-  `;
+  const rows = await Transaction.aggregate([
+    {
+      $match: buildBaseWhere(),
+    },
+    {
+      $group: {
+        _id: {
+          year: { $year: "$date" },
+          month: { $month: "$date" },
+        },
+        income: {
+          $sum: {
+            $cond: [{ $eq: ["$type", "INCOME"] }, "$amount", 0],
+          },
+        },
+        expense: {
+          $sum: {
+            $cond: [{ $eq: ["$type", "EXPENSE"] }, "$amount", 0],
+          },
+        },
+      },
+    },
+    {
+      $sort: {
+        "_id.year": 1,
+        "_id.month": 1,
+      },
+    },
+  ]);
 
   return rows.map((row) => ({
-    month: row.month,
+    month: `${row._id.year}-${String(row._id.month).padStart(2, "0")}`,
     income: toNumber(row.income),
     expense: toNumber(row.expense),
     net: Number((toNumber(row.income) - toNumber(row.expense)).toFixed(2)),
@@ -146,34 +185,28 @@ async function buildMonthlyTrends() {
 async function buildRecentActivity(limit = 10) {
   const take = Number.isInteger(limit) && limit > 0 ? limit : 10;
 
-  const transactions = await prisma.transaction.findMany({
-    where: buildBaseWhere(),
-    orderBy: [
-      { date: "desc" },
-      { createdAt: "desc" },
-    ],
-    take,
-    select: {
-      id: true,
-      amount: true,
-      type: true,
-      category: true,
-      date: true,
-      notes: true,
-      createdAt: true,
-      user: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
-    },
-  });
+  const transactions = await Transaction.find(buildBaseWhere())
+    .sort({ date: -1, createdAt: -1 })
+    .limit(take)
+    .populate("createdBy", "name email")
+    .lean();
 
   return transactions.map((item) => ({
-    ...item,
+    id: item._id.toString(),
     amount: toNumber(item.amount),
+    type: item.type,
+    category: item.category,
+    date: item.date,
+    notes: item.notes,
+    createdAt: item.createdAt,
+    createdBy: item.createdBy?._id?.toString() || null,
+    user: item.createdBy
+      ? {
+          id: item.createdBy._id.toString(),
+          name: item.createdBy.name,
+          email: item.createdBy.email,
+        }
+      : null,
   }));
 }
 

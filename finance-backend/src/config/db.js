@@ -1,42 +1,26 @@
-const { PrismaPg } = require("@prisma/adapter-pg");
+const mongoose = require("mongoose");
 
-const globalForPrisma = globalThis;
+let isConnected = false;
 
-let prisma;
-let initializationError;
-
-try {
-  const { PrismaClient } = require("@prisma/client");
-
-  if (!process.env.DATABASE_URL) {
-    throw new Error("DATABASE_URL is not set.");
+async function connectDB() {
+  if (isConnected) {
+    return mongoose.connection;
   }
 
-  const adapter = new PrismaPg({
-    connectionString: process.env.DATABASE_URL,
+  const mongoUri = process.env.MONGODB_URI;
+
+  if (!mongoUri) {
+    throw new Error("MONGODB_URI is not set.");
+  }
+
+  mongoose.set("strictQuery", true);
+
+  const connection = await mongoose.connect(mongoUri, {
+    serverSelectionTimeoutMS: 10000,
   });
 
-  prisma =
-    globalForPrisma.prisma ||
-    new PrismaClient({
-      adapter,
-      log: ["warn", "error"],
-    });
-
-  if (process.env.NODE_ENV !== "production") {
-    globalForPrisma.prisma = prisma;
-  }
-} catch (error) {
-  initializationError = error;
-  console.error("Prisma initialization failed:", error);
-  prisma = new Proxy(
-    {},
-    {
-      get() {
-        throw initializationError;
-      },
-    }
-  );
+  isConnected = connection.connection.readyState === 1;
+  return connection.connection;
 }
 
-module.exports = prisma;
+module.exports = connectDB;
