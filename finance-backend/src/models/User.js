@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 
-const ROLES = ["VIEWER", "ANALYST", "ADMIN"];
+const ROLES = ["USER", "MANAGER", "ADMIN"];
 
 const userSchema = new mongoose.Schema(
   {
@@ -25,7 +25,7 @@ const userSchema = new mongoose.Schema(
     role: {
       type: String,
       enum: ROLES,
-      default: "VIEWER",
+      default: "USER",
       index: true,
     },
     isActive: {
@@ -42,6 +42,16 @@ const userSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null,
+    },
+    refreshToken: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    refreshTokenExpiresAt: {
+      type: Date,
+      default: null,
+      index: true,
     },
   },
   {

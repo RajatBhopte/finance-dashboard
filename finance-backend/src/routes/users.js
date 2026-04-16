@@ -5,6 +5,7 @@ const {
   createUser,
   updateUser,
   deactivateUser,
+  hardDeleteUser,
   getMyProfile,
   updateMyProfile,
   updateUserRole,
@@ -19,11 +20,12 @@ router.use(protect);
 router.get("/me", getMyProfile);
 router.patch("/me", updateMyProfile);
 
-router.get("/", authorize("ADMIN"), getUsers);
+router.get("/", authorize("ADMIN", "MANAGER"), getUsers);
 router.post("/", authorize("ADMIN"), createUser);
-router.get("/:id", authorize("ADMIN"), getUserDetails);
-router.patch("/:id", authorize("ADMIN"), updateUser);
+router.get("/:id", authorize("ADMIN", "MANAGER"), getUserDetails);
+router.patch("/:id", authorize("ADMIN", "MANAGER"), updateUser);
 router.delete("/:id", authorize("ADMIN"), deactivateUser);
+router.delete("/:id/hard", authorize("ADMIN"), hardDeleteUser);
 router.patch("/:id/role", authorize("ADMIN"), updateUserRole);
 router.patch("/:id/status", authorize("ADMIN"), updateUserStatus);
 

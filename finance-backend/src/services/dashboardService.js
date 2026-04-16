@@ -1,218 +1,91 @@
-const Transaction = require("../models/Transaction");
+const User = require("../models/User");
 
-function toNumber(value) {
-  if (value === null || value === undefined) {
-    return 0;
+const ROLES = ["USER", "MANAGER", "ADMIN"];
+
+function normalizeRoleValue(value) {
+  if (typeof value !== "string") {
+    return "USER";
   }
 
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? Number(numeric.toFixed(2)) : 0;
+  const normalized = value.trim().toUpperCase();
+  return ROLES.includes(normalized) ? normalized : "USER";
 }
 
-function buildBaseWhere() {
-  return {
-    isDeleted: false,
+async function buildSummary(requestUser) {
+  const role = normalizeRoleValue(requestUser?.role);
+  const baseSummary = {
+    role,
+    permissions: {
+      canViewUserDirectory: role === "ADMIN" || role === "MANAGER",
+      canManageOwnProfile: true,
+      canCreateUsers: role === "ADMIN",
+      canChangeRoles: role === "ADMIN",
+      canDeactivateUsers: role === "ADMIN",
+    },
   };
-}
 
-async function sumAmount(where) {
-  const rows = await Transaction.aggregate([
-    {
-      $match: where,
-    },
-    {
-      $group: {
-        _id: null,
-        total: { $sum: "$amount" },
-      },
-    },
-  ]);
+  if (role === "USER") {
+    return {
+      ...baseSummary,
+      dashboardView: "self-service",
+      message:
+        "You can update your own profile, including name and password, from the My Profile section.",
+    };
+  }
 
-  return toNumber(rows[0]?.total);
-}
-
-async function buildSummary() {
-  const now = new Date();
-  const startOfCurrentMonth = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
-  );
-  const startOfPreviousMonth = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1),
-  );
-  const endOfPreviousMonth = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0, 23, 59, 59, 999),
-  );
-
-  const [totalIncome, totalExpense, curInc, curExp, prevInc, prevExp] =
+  const [totalUsers, activeUsers, roleDistribution, recentUsers] =
     await Promise.all([
-      sumAmount({ ...buildBaseWhere(), type: "INCOME" }),
-      sumAmount({ ...buildBaseWhere(), type: "EXPENSE" }),
-      sumAmount({
-        ...buildBaseWhere(),
-        type: "INCOME",
-        date: { $gte: startOfCurrentMonth },
-      }),
-      sumAmount({
-        ...buildBaseWhere(),
-        type: "EXPENSE",
-        date: { $gte: startOfCurrentMonth },
-      }),
-      sumAmount({
-        ...buildBaseWhere(),
-        type: "INCOME",
-        date: { $gte: startOfPreviousMonth, $lte: endOfPreviousMonth },
-      }),
-      sumAmount({
-        ...buildBaseWhere(),
-        type: "EXPENSE",
-        date: { $gte: startOfPreviousMonth, $lte: endOfPreviousMonth },
-      }),
+      User.countDocuments(),
+      User.countDocuments({ isActive: true }),
+      User.aggregate([
+        {
+          $group: {
+            _id: "$role",
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+      User.find()
+        .sort({ createdAt: -1 })
+        .limit(6)
+        .select("name email role isActive createdAt")
+        .lean(),
     ]);
 
-  const netBalance = Number((totalIncome - totalExpense).toFixed(2));
-
-  const curNet = curInc - curExp;
-  const prevNet = prevInc - prevExp;
-
-  const calculateTrend = (current, previous) => {
-    if (previous === 0) return current > 0 ? 100 : 0;
-    return Number(
-      (((current - previous) / Math.abs(previous)) * 100).toFixed(1),
-    );
+  const byRole = {
+    ADMIN: 0,
+    MANAGER: 0,
+    USER: 0,
   };
 
-  return {
-    totalIncome,
-    totalExpense,
-    netBalance,
-    trends: {
-      income: calculateTrend(curInc, prevInc),
-      expense: calculateTrend(curExp, prevExp),
-      netBalance: calculateTrend(curNet, prevNet),
-    },
-  };
-}
+  for (const row of roleDistribution) {
+    const roleKey = normalizeRoleValue(row?._id);
 
-async function buildCategoryTotals() {
-  const grouped = await Transaction.aggregate([
-    {
-      $match: buildBaseWhere(),
-    },
-    {
-      $group: {
-        _id: {
-          category: "$category",
-          type: "$type",
-        },
-        amount: {
-          $sum: "$amount",
-        },
-      },
-    },
-    {
-      $sort: {
-        "_id.category": 1,
-      },
-    },
-  ]);
-
-  const categoryMap = new Map();
-
-  for (const row of grouped) {
-    if (!categoryMap.has(row._id.category)) {
-      categoryMap.set(row._id.category, {
-        category: row._id.category,
-        income: 0,
-        expense: 0,
-        net: 0,
-      });
+    if (Object.prototype.hasOwnProperty.call(byRole, roleKey)) {
+      byRole[roleKey] = row.count;
     }
-
-    const current = categoryMap.get(row._id.category);
-    const amount = toNumber(row.amount);
-
-    if (row._id.type === "INCOME") {
-      current.income = amount;
-    } else {
-      current.expense = amount;
-    }
-
-    current.net = Number((current.income - current.expense).toFixed(2));
   }
 
-  return Array.from(categoryMap.values()).sort((a, b) => b.net - a.net);
-}
-
-async function buildMonthlyTrends() {
-  const rows = await Transaction.aggregate([
-    {
-      $match: buildBaseWhere(),
+  return {
+    ...baseSummary,
+    dashboardView: "directory-control",
+    totals: {
+      users: totalUsers,
+      activeUsers,
+      inactiveUsers: Math.max(totalUsers - activeUsers, 0),
+      byRole,
     },
-    {
-      $group: {
-        _id: {
-          year: { $year: "$date" },
-          month: { $month: "$date" },
-        },
-        income: {
-          $sum: {
-            $cond: [{ $eq: ["$type", "INCOME"] }, "$amount", 0],
-          },
-        },
-        expense: {
-          $sum: {
-            $cond: [{ $eq: ["$type", "EXPENSE"] }, "$amount", 0],
-          },
-        },
-      },
-    },
-    {
-      $sort: {
-        "_id.year": 1,
-        "_id.month": 1,
-      },
-    },
-  ]);
-
-  return rows.map((row) => ({
-    month: `${row._id.year}-${String(row._id.month).padStart(2, "0")}`,
-    income: toNumber(row.income),
-    expense: toNumber(row.expense),
-    net: Number((toNumber(row.income) - toNumber(row.expense)).toFixed(2)),
-  }));
-}
-
-async function buildRecentActivity(limit = 10) {
-  const take = Number.isInteger(limit) && limit > 0 ? limit : 10;
-
-  const transactions = await Transaction.find(buildBaseWhere())
-    .sort({ date: -1, createdAt: -1 })
-    .limit(take)
-    .populate("createdBy", "name email")
-    .lean();
-
-  return transactions.map((item) => ({
-    id: item._id.toString(),
-    amount: toNumber(item.amount),
-    type: item.type,
-    category: item.category,
-    date: item.date,
-    notes: item.notes,
-    createdAt: item.createdAt,
-    createdBy: item.createdBy?._id?.toString() || null,
-    user: item.createdBy
-      ? {
-          id: item.createdBy._id.toString(),
-          name: item.createdBy.name,
-          email: item.createdBy.email,
-        }
-      : null,
-  }));
+    recentUsers: recentUsers.map((item) => ({
+      id: item._id.toString(),
+      name: item.name,
+      email: item.email,
+      role: normalizeRoleValue(item.role),
+      isActive: Boolean(item.isActive),
+      createdAt: item.createdAt,
+    })),
+  };
 }
 
 module.exports = {
   buildSummary,
-  buildCategoryTotals,
-  buildMonthlyTrends,
-  buildRecentActivity,
 };
