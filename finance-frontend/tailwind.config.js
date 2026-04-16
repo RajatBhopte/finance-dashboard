@@ -19,8 +19,8 @@ export default {
         negative: "rgb(var(--color-negative) / <alpha-value>)",
         negativeSoft: "rgb(var(--color-negative-soft) / <alpha-value>)",
         admin: "rgb(var(--color-admin) / <alpha-value>)",
-        analyst: "rgb(var(--color-analyst) / <alpha-value>)",
-        viewer: "rgb(var(--color-viewer) / <alpha-value>)",
+        manager: "rgb(var(--color-manager) / <alpha-value>)",
+        user: "rgb(var(--color-user) / <alpha-value>)",
       },
       boxShadow: {
         luxe: "0 20px 60px rgba(15, 23, 42, 0.10)",

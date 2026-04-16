@@ -8,8 +8,8 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
-import Transactions from "./pages/Transactions";
 import Users from "./pages/Users";
+import Profile from "./pages/Profile";
 
 function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -18,11 +18,11 @@ function AppShell() {
 
   const pageTitles = useMemo(
     () => ({
-      "/dashboard": "Finance Overview",
-      "/transactions": "Transactions",
+      "/dashboard": "User Management",
+      "/profile": "My Profile",
       "/users": "People & Access",
     }),
-    []
+    [],
   );
 
   if (!isAuthenticated) {
@@ -42,7 +42,7 @@ function AppShell() {
             >
               <Menu size={20} />
             </button>
-            <Navbar title={pageTitles[location.pathname] || "Finance Dashboard"} />
+            <Navbar title={pageTitles[location.pathname] || "User Dashboard"} />
           </div>
         </div>
 
@@ -54,12 +54,12 @@ function AppShell() {
   );
 }
 
-function HomeRedirect() {
-  const { isAuthenticated } = useAuth();
-  return <Navigate to={isAuthenticated ? "/dashboard" : "/login"} replace />;
-}
-
 export default function App() {
+  function HomeRedirect() {
+    const { isAuthenticated } = useAuth();
+    return <Navigate to={isAuthenticated ? "/dashboard" : "/login"} replace />;
+  }
+
   return (
     <Routes>
       <Route path="/" element={<HomeRedirect />} />
@@ -74,11 +74,11 @@ export default function App() {
         }
       >
         <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/transactions" element={<Transactions />} />
+        <Route path="/profile" element={<Profile />} />
         <Route
           path="/users"
           element={
-            <ProtectedRoute allowedRoles={["ADMIN"]}>
+            <ProtectedRoute allowedRoles={["ADMIN", "MANAGER"]}>
               <Users />
             </ProtectedRoute>
           }

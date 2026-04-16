@@ -6,18 +6,26 @@ import { useTheme } from "../context/ThemeContext";
 
 const shellContent = {
   login: {
-    heading: "Finance Connect",
+    heading: "Access Connect",
     description:
-      "Sign in to access your finance dashboard, review income and expenses, and manage secure role-based access for your team.",
+      "Sign in to access the user management dashboard, review role permissions, and manage secure role-based access for your team.",
     captionTitle: "Workspace snapshot",
-    captionItems: ["Income overview", "Expense tracking", "Secure team access"],
+    captionItems: [
+      "Role-based access",
+      "User directory",
+      "Secure profile updates",
+    ],
   },
   register: {
-    heading: "Finance Connect",
+    heading: "Access Connect",
     description:
-      "Create your account to enter a modern finance workspace with clean dashboards, controlled access, and better money visibility.",
+      "Create your account to enter a clean user-management workspace with controlled access and auditable account updates.",
     captionTitle: "What you unlock",
-    captionItems: ["Viewer account access", "Category-wise insights", "Safer finance workflows"],
+    captionItems: [
+      "User account access",
+      "My profile control",
+      "Safer RBAC workflows",
+    ],
   },
 };
 
@@ -61,12 +69,30 @@ function DotMap() {
     for (let x = 0; x < width; x += gap) {
       for (let y = 0; y < height; y += gap) {
         const isInShape =
-          ((x < width * 0.25 && x > width * 0.05) && (y < height * 0.4 && y > height * 0.1)) ||
-          ((x < width * 0.25 && x > width * 0.15) && (y < height * 0.8 && y > height * 0.4)) ||
-          ((x < width * 0.45 && x > width * 0.3) && (y < height * 0.35 && y > height * 0.15)) ||
-          ((x < width * 0.5 && x > width * 0.35) && (y < height * 0.65 && y > height * 0.35)) ||
-          ((x < width * 0.72 && x > width * 0.45) && (y < height * 0.5 && y > height * 0.1)) ||
-          ((x < width * 0.82 && x > width * 0.66) && (y < height * 0.82 && y > height * 0.62));
+          (x < width * 0.25 &&
+            x > width * 0.05 &&
+            y < height * 0.4 &&
+            y > height * 0.1) ||
+          (x < width * 0.25 &&
+            x > width * 0.15 &&
+            y < height * 0.8 &&
+            y > height * 0.4) ||
+          (x < width * 0.45 &&
+            x > width * 0.3 &&
+            y < height * 0.35 &&
+            y > height * 0.15) ||
+          (x < width * 0.5 &&
+            x > width * 0.35 &&
+            y < height * 0.65 &&
+            y > height * 0.35) ||
+          (x < width * 0.72 &&
+            x > width * 0.45 &&
+            y < height * 0.5 &&
+            y > height * 0.1) ||
+          (x < width * 0.82 &&
+            x > width * 0.66 &&
+            y < height * 0.82 &&
+            y > height * 0.62);
 
         if (isInShape && Math.random() > 0.3) {
           dots.push({
@@ -221,7 +247,9 @@ function FinanceBadgeRow({ items }) {
             <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 text-blue-600 dark:bg-blue-500/15 dark:text-blue-200">
               <Icon size={18} />
             </div>
-            <p className="text-sm font-medium text-slate-700 dark:text-white/80">{item}</p>
+            <p className="text-sm font-medium text-slate-700 dark:text-white/80">
+              {item}
+            </p>
           </motion.div>
         );
       })}
@@ -256,37 +284,39 @@ export default function FinanceAuthShell({
           <div className="relative hidden h-[600px] w-1/2 overflow-hidden border-r border-slate-200 bg-gradient-to-br from-[#eef5ff] to-[#dfeafc] dark:border-[#1f2130] dark:from-[#0f1120] dark:to-[#151929] md:block">
             <DotMap />
 
-            <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center">
-              <motion.div
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.6, duration: 0.5 }}
-                className="mb-6"
-              >
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600">
-                  <Landmark className="h-6 w-6 text-white" />
-                </div>
-              </motion.div>
+            <div className="absolute inset-0 flex h-full flex-col justify-between p-8">
+              <div className="flex flex-col items-center pt-4 text-center">
+                <motion.div
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.6, duration: 0.5 }}
+                  className="mb-6"
+                >
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600">
+                    <Landmark className="h-6 w-6 text-white" />
+                  </div>
+                </motion.div>
 
-              <motion.h2
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.7, duration: 0.5 }}
-                className="mb-2 bg-gradient-to-r from-blue-500 to-indigo-600 bg-clip-text text-3xl font-bold text-transparent dark:from-blue-400 dark:to-indigo-500"
-              >
-                {content.heading}
-              </motion.h2>
+                <motion.h2
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.7, duration: 0.5 }}
+                  className="mb-2 bg-gradient-to-r from-blue-500 to-indigo-600 bg-clip-text text-3xl font-bold text-transparent dark:from-blue-400 dark:to-indigo-500"
+                >
+                  {content.heading}
+                </motion.h2>
 
-              <motion.p
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.8, duration: 0.5 }}
-                className="max-w-xs text-sm leading-6 text-slate-600 dark:text-gray-400"
-              >
-                {content.description}
-              </motion.p>
+                <motion.p
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.8, duration: 0.5 }}
+                  className="max-w-xs text-sm leading-6 text-slate-600 dark:text-gray-400"
+                >
+                  {content.description}
+                </motion.p>
+              </div>
 
-              <div className="absolute bottom-8 left-8 right-8">
+              <div>
                 <div className="rounded-2xl border border-slate-200/90 bg-white/80 p-5 text-left shadow-lg backdrop-blur-xl dark:border-white/10 dark:bg-white/5">
                   <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500 dark:text-white/45">
                     {content.captionTitle}
@@ -298,20 +328,36 @@ export default function FinanceAuthShell({
           </div>
 
           <div className="w-full p-8 md:w-1/2 md:p-10">
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+            >
               <div className="mb-6 md:hidden">
-                <p className="text-sm uppercase tracking-[0.38em] text-slate-500 dark:text-gray-400">Finance Suite</p>
+                <p className="text-sm uppercase tracking-[0.38em] text-slate-500 dark:text-gray-400">
+                  User System
+                </p>
                 <h2 className="mt-3 text-3xl font-bold">{mobileTitle}</h2>
-                <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-gray-400">{content.description}</p>
+                <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-gray-400">
+                  {content.description}
+                </p>
               </div>
 
-              <p className="text-sm uppercase tracking-[0.38em] text-slate-500 dark:text-gray-400">{formEyebrow}</p>
+              <p className="text-sm uppercase tracking-[0.38em] text-slate-500 dark:text-gray-400">
+                {formEyebrow}
+              </p>
               <h1 className="mb-1 mt-3 text-3xl font-bold">{formTitle}</h1>
-              <p className="mb-8 text-sm leading-6 text-slate-600 dark:text-gray-400">{formDescription}</p>
+              <p className="mb-8 text-sm leading-6 text-slate-600 dark:text-gray-400">
+                {formDescription}
+              </p>
 
               {children}
 
-              {footer ? <div className="mt-6 text-center text-sm text-slate-600 dark:text-gray-400">{footer}</div> : null}
+              {footer ? (
+                <div className="mt-6 text-center text-sm text-slate-600 dark:text-gray-400">
+                  {footer}
+                </div>
+              ) : null}
             </motion.div>
           </div>
         </motion.div>
