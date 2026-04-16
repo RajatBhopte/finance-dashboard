@@ -1,9 +1,8 @@
 const bcrypt = require("bcryptjs");
 const mongoose = require("mongoose");
 const User = require("../models/User");
-const Transaction = require("../models/Transaction");
 
-const ROLES = ["VIEWER", "ANALYST", "ADMIN"];
+const ROLES = ["USER", "MANAGER", "ADMIN"];
 const EMAIL_REGEX =
   /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
 
@@ -23,6 +22,11 @@ function normalizeEmail(value) {
 
 function normalizeRole(value) {
   return normalizeText(value).toUpperCase();
+}
+
+function normalizeStoredRole(value) {
+  const normalized = normalizeRole(value);
+  return ROLES.includes(normalized) ? normalized : "USER";
 }
 
 function validateEmail(value) {
@@ -114,7 +118,7 @@ function mapAuditActor(actor) {
   };
 }
 
-function serializeUser(user, transactionCount = 0) {
+function serializeUser(user) {
   const source = typeof user.toJSON === "function" ? user.toJSON() : user;
   const createdByActor = mapAuditActor(source.createdBy);
   const updatedByActor = mapAuditActor(source.updatedBy);
@@ -123,7 +127,7 @@ function serializeUser(user, transactionCount = 0) {
     id: source.id || source._id?.toString?.(),
     name: source.name,
     email: source.email,
-    role: source.role,
+    role: normalizeStoredRole(source.role),
     isActive: Boolean(source.isActive),
     createdAt: source.createdAt,
     updatedAt: source.updatedAt,
@@ -135,48 +139,7 @@ function serializeUser(user, transactionCount = 0) {
       createdBy: createdByActor,
       updatedBy: updatedByActor,
     },
-    _count: {
-      transactions: transactionCount,
-    },
   };
-}
-
-async function getTransactionCountMap(userIds) {
-  if (!userIds.length) {
-    return new Map();
-  }
-
-  const grouped = await Transaction.aggregate([
-    {
-      $match: {
-        createdBy: { $in: userIds },
-      },
-    },
-    {
-      $group: {
-        _id: "$createdBy",
-        count: { $sum: 1 },
-      },
-    },
-  ]);
-
-  const map = new Map();
-
-  for (const row of grouped) {
-    map.set(row._id.toString(), row.count);
-  }
-
-  return map;
-}
-
-async function withTransactionCounts(users) {
-  const userIds = users.map((item) => item._id);
-  const transactionCountMap = await getTransactionCountMap(userIds);
-
-  return users.map((item) => {
-    const key = item._id.toString();
-    return serializeUser(item, transactionCountMap.get(key) || 0);
-  });
 }
 
 async function findUserById(id, withAudit = false) {
@@ -209,11 +172,8 @@ async function findUserOrThrow(id, withAudit = false) {
 
 async function serializeSingleUser(id, withAudit = true) {
   const user = await findUserOrThrow(id, withAudit);
-  const transactionCount = await Transaction.countDocuments({
-    createdBy: user._id,
-  });
 
-  return serializeUser(user, transactionCount);
+  return serializeUser(user);
 }
 
 async function ensureAdminSafety(userId, nextRole, nextStatus) {
@@ -227,10 +187,12 @@ async function ensureAdminSafety(userId, nextRole, nextStatus) {
     throw createError(404, "User not found.");
   }
 
-  const finalRole = nextRole ?? user.role;
+  const existingRole = normalizeStoredRole(user.role);
+  const finalRole =
+    nextRole !== undefined ? normalizeStoredRole(nextRole) : existingRole;
   const finalStatus = nextStatus ?? user.isActive;
   const wouldRemoveActiveAdmin =
-    user.role === "ADMIN" &&
+    existingRole === "ADMIN" &&
     user.isActive &&
     (finalRole !== "ADMIN" || finalStatus === false);
 
@@ -267,7 +229,7 @@ const getUsers = async (req, res, next) => {
     if (role && !ROLES.includes(normalizedRole)) {
       return res.status(400).json({
         success: false,
-        message: "Role filter must be VIEWER, ANALYST, or ADMIN.",
+        message: "Role filter must be USER, MANAGER, or ADMIN.",
       });
     }
 
@@ -318,18 +280,18 @@ const getUsers = async (req, res, next) => {
       User.countDocuments(where),
     ]);
 
-    const usersWithCounts = await withTransactionCounts(users);
+    const serializedUsers = users.map((item) => serializeUser(item));
 
     return res.status(200).json({
       success: true,
-      count: usersWithCounts.length,
+      count: serializedUsers.length,
       pagination: {
         page: parsedPage,
         limit: parsedLimit,
         total,
         totalPages: Math.ceil(total / parsedLimit) || 1,
       },
-      data: usersWithCounts,
+      data: serializedUsers,
     });
   } catch (error) {
     return next(error);
@@ -339,6 +301,13 @@ const getUsers = async (req, res, next) => {
 const getUserDetails = async (req, res, next) => {
   try {
     const user = await serializeSingleUser(req.params.id, true);
+
+    if (req.user.role === "MANAGER" && user.role === "ADMIN") {
+      return res.status(403).json({
+        success: false,
+        message: "Managers cannot view admin user details.",
+      });
+    }
 
     return res.status(200).json({
       success: true,
@@ -356,7 +325,7 @@ const createUser = async (req, res, next) => {
 
     const normalizedName = normalizeText(name);
     const normalizedEmail = normalizeEmail(email);
-    const normalizedRole = role ? normalizeRole(role) : "VIEWER";
+    const normalizedRole = role ? normalizeRole(role) : "USER";
     const parsedStatus = isActive === undefined ? true : parseBoolean(isActive);
     const shouldGeneratePassword =
       parseFlag(autoGeneratePassword) || !normalizeText(password);
@@ -381,7 +350,7 @@ const createUser = async (req, res, next) => {
     if (!ROLES.includes(normalizedRole)) {
       return res.status(400).json({
         success: false,
-        message: "Role must be VIEWER, ANALYST, or ADMIN.",
+        message: "Role must be USER, MANAGER, or ADMIN.",
       });
     }
 
@@ -455,10 +424,20 @@ const updateUser = async (req, res, next) => {
       throw createError(404, "User not found.");
     }
 
+    const targetUserRole = normalizeStoredRole(targetUser.role);
+
     const data = {};
     const isSelf = req.user.id === targetUserId;
+    const isManagerRequest = req.user.role === "MANAGER";
     let nextRole;
     let nextStatus;
+
+    if (isManagerRequest && targetUserRole === "ADMIN") {
+      return res.status(403).json({
+        success: false,
+        message: "Managers cannot update admin users.",
+      });
+    }
 
     if (req.body?.name !== undefined) {
       const normalizedName = normalizeText(req.body.name);
@@ -501,29 +480,43 @@ const updateUser = async (req, res, next) => {
     }
 
     if (req.body?.role !== undefined) {
+      if (isManagerRequest) {
+        return res.status(403).json({
+          success: false,
+          message: "Managers cannot change user roles.",
+        });
+      }
+
       const normalizedRole = normalizeRole(req.body.role);
 
       if (!ROLES.includes(normalizedRole)) {
         return res.status(400).json({
           success: false,
-          message: "Role must be VIEWER, ANALYST, or ADMIN.",
+          message: "Role must be USER, MANAGER, or ADMIN.",
         });
       }
 
-      if (isSelf && normalizedRole !== targetUser.role) {
+      if (isSelf && normalizedRole !== targetUserRole) {
         return res.status(400).json({
           success: false,
           message: "You cannot change your own role.",
         });
       }
 
-      if (normalizedRole !== targetUser.role) {
+      if (normalizedRole !== targetUserRole) {
         nextRole = normalizedRole;
         data.role = normalizedRole;
       }
     }
 
     if (req.body?.isActive !== undefined) {
+      if (isManagerRequest) {
+        return res.status(403).json({
+          success: false,
+          message: "Managers cannot change account status.",
+        });
+      }
+
       const parsedStatus = parseBoolean(req.body.isActive);
 
       if (parsedStatus === null) {
@@ -559,7 +552,10 @@ const updateUser = async (req, res, next) => {
       data.password = await bcrypt.hash(plainPassword, 10);
     }
 
-    if (nextRole !== undefined || nextStatus !== undefined) {
+    if (
+      !isManagerRequest &&
+      (nextRole !== undefined || nextStatus !== undefined)
+    ) {
       await ensureAdminSafety(targetUserId, nextRole, nextStatus);
     }
 
@@ -615,6 +611,32 @@ const deactivateUser = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       message: "User deactivated successfully.",
+      data: serializedUser,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const hardDeleteUser = async (req, res, next) => {
+  try {
+    const targetUserId = req.params.id;
+
+    if (req.user.id === targetUserId) {
+      return res.status(400).json({
+        success: false,
+        message: "You cannot permanently delete your own account.",
+      });
+    }
+
+    await ensureAdminSafety(targetUserId, undefined, false);
+    const serializedUser = await serializeSingleUser(targetUserId, true);
+
+    await User.findByIdAndDelete(targetUserId);
+
+    return res.status(200).json({
+      success: true,
+      message: "User permanently deleted.",
       data: serializedUser,
     });
   } catch (error) {
@@ -723,6 +745,7 @@ module.exports = {
   createUser,
   updateUser,
   deactivateUser,
+  hardDeleteUser,
   getMyProfile,
   updateMyProfile,
   updateUserRole,

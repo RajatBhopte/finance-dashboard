@@ -16,12 +16,46 @@ const normalizeText = (value) =>
 
 const normalizeEmail = (email) => normalizeText(email).toLowerCase();
 
-// Helper for generating JWT
-const generateToken = (id, role) => {
+const ACCESS_TOKEN_EXPIRES_IN = process.env.ACCESS_TOKEN_EXPIRES_IN || "15m";
+const REFRESH_TOKEN_EXPIRES_IN = process.env.REFRESH_TOKEN_EXPIRES_IN || "30d";
+const REFRESH_TOKEN_SECRET =
+  process.env.REFRESH_TOKEN_SECRET || process.env.JWT_SECRET;
+
+const generateAccessToken = (id, role) => {
   return jwt.sign({ id, role }, process.env.JWT_SECRET, {
-    expiresIn: "30d",
+    expiresIn: ACCESS_TOKEN_EXPIRES_IN,
   });
 };
+
+const generateRefreshToken = (id, role) => {
+  return jwt.sign({ id, role }, REFRESH_TOKEN_SECRET, {
+    expiresIn: REFRESH_TOKEN_EXPIRES_IN,
+  });
+};
+
+async function saveRefreshToken(user, refreshToken) {
+  const decoded = jwt.decode(refreshToken);
+  const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
+
+  user.refreshToken = refreshTokenHash;
+  user.refreshTokenExpiresAt = decoded?.exp
+    ? new Date(decoded.exp * 1000)
+    : null;
+
+  await user.save();
+}
+
+async function issueTokenPair(user) {
+  const accessToken = generateAccessToken(user.id, user.role);
+  const refreshToken = generateRefreshToken(user.id, user.role);
+
+  await saveRefreshToken(user, refreshToken);
+
+  return {
+    accessToken,
+    refreshToken,
+  };
+}
 
 /**
  * @desc    Register a new user
@@ -72,19 +106,20 @@ const register = async (req, res, next) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create user (default role is VIEWER via schema)
+    // Create user (default role is USER via schema)
     const user = await User.create({
       name: normalizedName,
       email: normalizedEmail,
       password: hashedPassword,
     });
 
-    // Generate token so user is immediately logged in
-    const token = generateToken(user.id, user.role);
+    const { accessToken, refreshToken } = await issueTokenPair(user);
 
     res.status(201).json({
       success: true,
-      token,
+      token: accessToken,
+      accessToken,
+      refreshToken,
       user: user.toJSON(),
     });
   } catch (error) {
@@ -147,12 +182,13 @@ const login = async (req, res, next) => {
       });
     }
 
-    // Generate token
-    const token = generateToken(user.id, user.role);
+    const { accessToken, refreshToken } = await issueTokenPair(user);
 
     res.status(200).json({
       success: true,
-      token,
+      token: accessToken,
+      accessToken,
+      refreshToken,
       user: user.toJSON(),
     });
   } catch (error) {
@@ -161,19 +197,134 @@ const login = async (req, res, next) => {
 };
 
 /**
- * @desc    Logout user (stateless)
- * @route   GET /api/auth/logout
+ * @desc    Refresh access token
+ * @route   POST /api/auth/refresh
  * @access  Public
  */
-const logout = (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: "Logged out successfully. Please clear your token on the client.",
-  });
+const refresh = async (req, res, next) => {
+  try {
+    const providedRefreshToken = normalizeText(req.body?.refreshToken);
+
+    if (!providedRefreshToken) {
+      return res.status(400).json({
+        success: false,
+        message: "Refresh token is required.",
+      });
+    }
+
+    let decoded;
+
+    try {
+      decoded = jwt.verify(providedRefreshToken, REFRESH_TOKEN_SECRET);
+    } catch (_error) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid or expired refresh token.",
+      });
+    }
+
+    const user = await User.findById(decoded.id).select(
+      "+refreshToken name email role isActive createdBy updatedBy createdAt updatedAt refreshTokenExpiresAt",
+    );
+
+    if (!user || !user.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid refresh token context.",
+      });
+    }
+
+    if (
+      !user.refreshToken ||
+      !user.refreshTokenExpiresAt ||
+      user.refreshTokenExpiresAt.getTime() < Date.now()
+    ) {
+      return res.status(401).json({
+        success: false,
+        message: "Refresh token has expired. Please sign in again.",
+      });
+    }
+
+    const matchesStoredToken = await bcrypt.compare(
+      providedRefreshToken,
+      user.refreshToken,
+    );
+
+    if (!matchesStoredToken) {
+      return res.status(401).json({
+        success: false,
+        message: "Refresh token is no longer valid.",
+      });
+    }
+
+    const { accessToken, refreshToken } = await issueTokenPair(user);
+
+    return res.status(200).json({
+      success: true,
+      token: accessToken,
+      accessToken,
+      refreshToken,
+      user: user.toJSON(),
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
+ * @desc    Logout user and revoke refresh token
+ * @route   POST /api/auth/logout
+ * @access  Public
+ */
+const logout = async (req, res, next) => {
+  try {
+    const providedRefreshToken = normalizeText(req.body?.refreshToken);
+    let userId = null;
+
+    if (providedRefreshToken) {
+      try {
+        const decoded = jwt.verify(providedRefreshToken, REFRESH_TOKEN_SECRET);
+        userId = decoded.id;
+      } catch (_error) {
+        userId = null;
+      }
+    }
+
+    if (!userId) {
+      const authHeader = req.headers.authorization;
+
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        try {
+          const decoded = jwt.verify(
+            authHeader.split(" ")[1],
+            process.env.JWT_SECRET,
+          );
+          userId = decoded.id;
+        } catch (_error) {
+          userId = null;
+        }
+      }
+    }
+
+    if (userId) {
+      await User.findByIdAndUpdate(userId, {
+        refreshToken: null,
+        refreshTokenExpiresAt: null,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Logged out successfully.",
+    });
+  } catch (error) {
+    next(error);
+  }
 };
 
 module.exports = {
   register,
   login,
+  refresh,
   logout,
 };
