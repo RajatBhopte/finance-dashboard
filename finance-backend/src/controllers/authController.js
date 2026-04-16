@@ -16,6 +16,19 @@ const normalizeText = (value) =>
 
 const normalizeEmail = (email) => normalizeText(email).toLowerCase();
 
+const escapeRegex = (value) =>
+  String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const serializeAuthUser = (user) => {
+  const source = typeof user.toJSON === "function" ? user.toJSON() : user;
+  const sanitized = { ...source };
+
+  delete sanitized.refreshToken;
+  delete sanitized.refreshTokenExpiresAt;
+
+  return sanitized;
+};
+
 const ACCESS_TOKEN_EXPIRES_IN = process.env.ACCESS_TOKEN_EXPIRES_IN || "15m";
 const REFRESH_TOKEN_EXPIRES_IN = process.env.REFRESH_TOKEN_EXPIRES_IN || "30d";
 const REFRESH_TOKEN_SECRET =
@@ -120,7 +133,7 @@ const register = async (req, res, next) => {
       token: accessToken,
       accessToken,
       refreshToken,
-      user: user.toJSON(),
+      user: serializeAuthUser(user),
     });
   } catch (error) {
     next(error);
@@ -134,28 +147,35 @@ const register = async (req, res, next) => {
  */
 const login = async (req, res, next) => {
   try {
-    const { email, password } = req.body || {};
-    const normalizedEmail = normalizeEmail(email);
+    const { password } = req.body || {};
+    const identifier = normalizeText(
+      req.body?.identifier || req.body?.email || req.body?.username,
+    );
 
     // Validation
-    if (!normalizedEmail || !password) {
+    if (!identifier || !password) {
       return res.status(400).json({
         success: false,
-        message: "Please provide email and password",
+        message: "Please provide email/username and password",
       });
     }
 
-    if (!validateEmail(normalizedEmail)) {
+    const normalizedEmail = normalizeEmail(identifier);
+    const isEmailLogin = validateEmail(normalizedEmail);
+
+    if (!isEmailLogin && identifier.length < 2) {
       return res.status(400).json({
         success: false,
-        message: "Please provide a valid email address",
+        message: "Username must be at least 2 characters long",
       });
     }
 
     // Find user
-    const user = await User.findOne({ email: normalizedEmail }).select(
-      "+password",
-    );
+    const userLookupQuery = isEmailLogin
+      ? { email: normalizedEmail }
+      : { name: new RegExp(`^${escapeRegex(identifier)}$`, "i") };
+
+    const user = await User.findOne(userLookupQuery).select("+password");
 
     if (!user) {
       return res.status(401).json({
@@ -189,7 +209,7 @@ const login = async (req, res, next) => {
       token: accessToken,
       accessToken,
       refreshToken,
-      user: user.toJSON(),
+      user: serializeAuthUser(user),
     });
   } catch (error) {
     next(error);
@@ -264,7 +284,7 @@ const refresh = async (req, res, next) => {
       token: accessToken,
       accessToken,
       refreshToken,
-      user: user.toJSON(),
+      user: serializeAuthUser(user),
     });
   } catch (error) {
     return next(error);

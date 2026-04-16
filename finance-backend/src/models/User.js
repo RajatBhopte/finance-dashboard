@@ -62,6 +62,8 @@ const userSchema = new mongoose.Schema(
         ret.id = ret._id.toString();
         delete ret._id;
         delete ret.password;
+        delete ret.refreshToken;
+        delete ret.refreshTokenExpiresAt;
         return ret;
       },
     },
