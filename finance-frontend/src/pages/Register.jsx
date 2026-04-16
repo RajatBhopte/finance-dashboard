@@ -24,10 +24,15 @@ export default function Register() {
       await api.post("/api/auth/register", form);
       navigate("/login", {
         replace: true,
-        state: { successMessage: "Account created successfully. You can sign in now." },
+        state: {
+          successMessage: "Account created successfully. You can sign in now.",
+        },
       });
     } catch (requestError) {
-      const message = getErrorMessage(requestError, "Unable to create your account.");
+      const message = getErrorMessage(
+        requestError,
+        "Unable to create your account.",
+      );
       setError(message);
       toast.error(message);
     } finally {
@@ -41,11 +46,14 @@ export default function Register() {
       mobileTitle="Create your account"
       formEyebrow="New account"
       formTitle="Create your account"
-      formDescription="Set up your finance account to start with viewer access and step into a cleaner dashboard experience."
+      formDescription="Set up your account to start with USER access and manage your profile in a secure RBAC workflow."
       footer={
         <>
           Already have an account?{" "}
-          <Link to="/login" className="font-medium text-blue-500 transition-colors hover:text-blue-400">
+          <Link
+            to="/login"
+            className="font-medium text-blue-500 transition-colors hover:text-blue-400"
+          >
             Go to login
           </Link>
         </>
@@ -64,7 +72,9 @@ export default function Register() {
           required
           icon={User2}
           value={form.name}
-          onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+          onChange={(event) =>
+            setForm((current) => ({ ...current, name: event.target.value }))
+          }
           placeholder="Enter your full name"
         />
 
@@ -75,7 +85,9 @@ export default function Register() {
           required
           icon={Mail}
           value={form.email}
-          onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
+          onChange={(event) =>
+            setForm((current) => ({ ...current, email: event.target.value }))
+          }
           placeholder="Enter your email address"
         />
 
@@ -88,7 +100,9 @@ export default function Register() {
           visible={showPassword}
           onToggleVisibility={() => setShowPassword((current) => !current)}
           value={form.password}
-          onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
+          onChange={(event) =>
+            setForm((current) => ({ ...current, password: event.target.value }))
+          }
           placeholder="Create a strong password"
         />
 

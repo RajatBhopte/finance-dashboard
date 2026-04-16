@@ -58,11 +58,14 @@ export default function Login() {
       mobileTitle="Welcome back"
       formEyebrow="Secure sign in"
       formTitle="Welcome back"
-      formDescription="Sign in to your finance account and continue managing your dashboard, transactions, and access controls."
+      formDescription="Sign in to continue with role-based user management, secure profile updates, and access controls."
       footer={
         <>
           New here?{" "}
-          <Link to="/register" className="font-medium text-blue-500 transition-colors hover:text-blue-400">
+          <Link
+            to="/register"
+            className="font-medium text-blue-500 transition-colors hover:text-blue-400"
+          >
             Create an account
           </Link>
         </>
@@ -77,13 +80,15 @@ export default function Login() {
       >
         <AuthField
           id="email"
-          label="Email"
-          type="email"
+          label="Email or Username"
+          type="text"
           required
           icon={Mail}
           value={form.email}
-          onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
-          placeholder="Enter your work email"
+          onChange={(event) =>
+            setForm((current) => ({ ...current, email: event.target.value }))
+          }
+          placeholder="Enter your email or username"
         />
 
         <AuthField
@@ -95,7 +100,9 @@ export default function Login() {
           visible={showPassword}
           onToggleVisibility={() => setShowPassword((current) => !current)}
           value={form.password}
-          onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
+          onChange={(event) =>
+            setForm((current) => ({ ...current, password: event.target.value }))
+          }
           placeholder="Enter your password"
         />
 
