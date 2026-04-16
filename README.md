@@ -216,9 +216,9 @@ node --check server.js
 
 Update this section before final submission.
 
-- Frontend URL: https://your-frontend-domain.example
-- Backend API Base URL: https://your-backend-domain.example
-- Health Check: https://your-backend-domain.example/api/health
+- Frontend URL: https://user-frontend-wine.vercel.app
+- Backend API Base URL:https://user-management-server-theta.vercel.app
+- Health Check: https://user-management-server-theta.vercel.app/api/health
 
 Notes:
 

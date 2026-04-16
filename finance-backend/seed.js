@@ -38,19 +38,19 @@ async function main() {
 
   const admin = await upsertUser(
     "Admin User",
-    "admin@finance.com",
+    "admin@gamil.com",
     "admin123",
     "ADMIN",
   );
   const manager = await upsertUser(
     "Manager User",
-    "manager@finance.com",
+    "manager@gamil.com",
     "manager123",
     "MANAGER",
   );
   const user = await upsertUser(
     "Regular User",
-    "user@finance.com",
+    "user@gamil.com",
     "user123",
     "USER",
   );
