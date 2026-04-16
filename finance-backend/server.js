@@ -7,11 +7,16 @@ const dashboardRoutes = require("./src/routes/dashboard");
 const errorHandler = require("./src/middleware/errorHandler");
 const { apiLimiter } = require("./src/middleware/rateLimiter");
 const connectDB = require("./src/config/db");
+const cors = require("cors");
+
+const corsOptions = { origin: "*", optionsSuccessStatus: 200 };
+const app = express();
+app.use(cors(corsOptions));
 const dns = require("dns");
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
 // const resolveDns = util.promisify(dns.resolve);
 
-const app = express();
+
 const port = process.env.PORT || 5000;
 const isVercel = process.env.VERCEL === "1";
 const requiredEnvVars = ["MONGODB_URI", "JWT_SECRET"];
