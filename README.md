@@ -147,9 +147,9 @@ npm run seed
 
 Seeded users:
 
-- admin@finance.com / admin123 / ADMIN
-- manager@finance.com / manager123 / MANAGER
-- user@finance.com / user123 / USER
+- admin@gmail.com / admin123 / ADMIN
+- manager@gamil.com / manager123 / MANAGER
+- user@gmail.com / user123 / USER
 
 ## API Overview
 
